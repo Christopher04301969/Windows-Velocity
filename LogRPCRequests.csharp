@@ -1,0 +1,6 @@
+public override async Task<OrganizeResponse> OrganizeFiles(OrganizeRequest request, ServerCallContext context)
+{
+    EventLog.WriteEntry("VelocityService", $"OrganizeFiles called by {context.User.Identity.Name}", EventLogEntryType.Information);
+    // File organization logic
+    return new OrganizeResponse { Success = true };
+}

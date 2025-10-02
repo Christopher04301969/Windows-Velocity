@@ -1,0 +1,1 @@
+Sign scripts using Set-AuthenticodeSignature:

@@ -1,0 +1,1 @@
+Copy binaries to C:\VelocityObjects\<ServiceName>.

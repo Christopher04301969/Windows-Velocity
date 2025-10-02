@@ -1,0 +1,1 @@
+sc.exe config VelocityService obj= "NT AUTHORITY\LocalService"

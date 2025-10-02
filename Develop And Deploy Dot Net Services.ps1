@@ -1,0 +1,1 @@
+dotnet --versiodotnet new sln -n WindowsVelocity

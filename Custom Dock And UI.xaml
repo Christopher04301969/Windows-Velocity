@@ -1,0 +1,13 @@
+<Window x:Class="VelocityDock.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Velocity Dock" Height="60" Width="400" WindowStyle="None" Background="Black" Opacity="0.8"
+        Topmost="True" Left="0" Top="{Binding Source={x:Static SystemParameters.PrimaryScreenHeight}, Converter={StaticResource SubtractConverter}, ConverterParameter=60}">
+    <StackPanel Orientation="Horizontal" Margin="10">
+        <Button Content="Notepad" Width="80" Height="40" Background="DarkGray" ForeColor="White" Click="LaunchApp"/>
+        <Button Content="Cmd" Width="80" Height="40" Background="DarkGray" ForeColor="White" Click="LaunchApp"/>
+        <Button Content="Explorer" Width="80" Height="40" Background="DarkGray" ForeColor="White" Click="LaunchApp"/>
+        <Button Content="Installer" Width="80" Height="40" Background="DarkGray" ForeColor="White" Click="LaunchApp"/>
+        <Button Content="C:\Nodes\Documents" Width="80" Height="40" Background="DarkGray" ForeColor="White" Click="LaunchApp"/>
+    </StackPanel>
+</Window>

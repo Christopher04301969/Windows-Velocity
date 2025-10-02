@@ -1,0 +1,1 @@
+Purpose: This script optimizes Windows for performance, disables unnecessary services, sets up node-based file handling, and applies the VR theme. It integrates with the .NET services and ensures WSL is configured for security.

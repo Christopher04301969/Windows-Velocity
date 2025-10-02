@@ -1,0 +1,5 @@
+var server = new Grpc.Core.Server
+{
+    Services = { FileManagement.BindService(new FileManagementService()) },
+    Ports = { new ServerPort("localhost", 50051, new SslServerCredentials(new[] { new X509Certificate2("server.pfx", "password") })) }
+};

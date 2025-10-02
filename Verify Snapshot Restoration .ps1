@@ -1,0 +1,1 @@
+wsl -u root -e bash -c "/mnt/c/Windows/Temp/restore_snapshot.sh"

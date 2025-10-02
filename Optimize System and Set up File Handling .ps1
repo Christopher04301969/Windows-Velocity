@@ -1,0 +1,1 @@
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\WindowsVelocityScript.ps1" -Verb RunAs

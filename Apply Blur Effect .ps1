@@ -1,0 +1,1 @@
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\ApplyBlur.ps1" -Verb RunAs

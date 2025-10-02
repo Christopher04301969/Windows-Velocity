@@ -1,0 +1,1 @@
+Purpose: The VelocityDock.xaml and VelocityDock.xaml.cs create a semi-transparent WPF dock with buttons for launching applications and the installer service. The ApplyBlur.ps1 script applies a blur effect to non-focused windows, enhancing the VR aesthetic.

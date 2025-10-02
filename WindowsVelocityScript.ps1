@@ -1,0 +1,386 @@
+# Windows Velocity Optimization Script
+# Run as Administrator in PowerShell
+# Backup your system before running
+
+# Initialize WSL with Ubuntu
+Write-Host "Enabling and configuring WSL..."
+Enable-WindowsOptionalFeature -Online -FeatureName Microsoft-Windows-Subsystem-Linux -NoRestart
+Enable-WindowsOptionalFeature -Online -FeatureName VirtualMachinePlatform -NoRestart
+wsl --install -d Ubuntu -NoLaunch
+wsl --set-default Ubuntu
+Write-Host "WSL installed with Ubuntu. Run 'wsl' to complete setup."
+
+# Optimize WSL for low-hardware systems
+Write-Host "Optimizing WSL configuration..."
+$wslConfig = @"
+[wsl2]
+memory=4GB
+swap=0
+localhostForwarding=true
+"@
+$wslConfig | Out-File -FilePath "$env:USERPROFILE\.wslconfig" -Encoding ASCII
+
+# Define Windows function objects
+Write-Host "Classifying Windows functions into objects..."
+$objectDir = "C:\VelocityObjects"
+if (-not (Test-Path $objectDir)) {
+    New-Item -Path $objectDir -ItemType Directory
+}
+$functionObjects = @{
+    "FileManagement" = @("explorer.exe", "C:\Nodes")
+    "ProcessScheduling" = @("taskmgr.exe", "C:\Windows\Temp\wsl_scheduler.sh")
+    "Security" = @("C:\Windows\Temp\wsl_security.sh", "C:\Windows\Temp\ps_security.sh")
+    "Maintenance" = @("C:\Windows\Temp\wsl_problem_handler.sh", "C:\Windows\Temp\snapshot_os.sh")
+}
+foreach ($obj in $functionObjects.Keys) {
+    $objPath = Join-Path $objectDir $obj
+    if (-not (Test-Path $objPath)) {
+        New-Item -Path $objPath -ItemType Directory
+    }
+    foreach ($item in $functionObjects[$obj]) {
+        if (Test-Path $item) {
+            Copy-Item -Path $item -Destination $objPath -Force
+        }
+    }
+    # Delegate security to WSL
+    $aclScript = @"
+#!/bin/bash
+# Secure $obj object
+chown root:root /mnt/c/VelocityObjects/$obj
+chmod 700 /mnt/c/VelocityObjects/$obj
+echo "Security for $obj delegated to WSL root" > /mnt/c/Windows/Temp/velocity_security_log.txt
+"@
+    $aclScript | Out-File -FilePath "C:\Windows\Temp\secure_$obj.sh" -Encoding ASCII
+    wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/secure_$obj.sh"
+    wsl bash -c "sudo /mnt/c/Windows/Temp/secure_$obj.sh"
+}
+
+# Snapshot for Last Known Good Configuration
+Write-Host "Configuring snapshot-based Last Known Good Configuration..."
+$snapshotDir = "C:\Snapshots"
+if (-not (Test-Path $snapshotDir)) {
+    New-Item -Path $snapshotDir -ItemType Directory
+}
+$osSnapshotScript = @"
+#!/bin/bash
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+mkdir -p /mnt/c/Snapshots/OS_\$TIMESTAMP
+reg export HKLM /mnt/c/Snapshots/OS_\$TIMESTAMP/hklm.reg
+reg export HKCU /mnt/c/Snapshots/OS_\$TIMESTAMP/hkcu.reg
+cp -r /mnt/c/Windows/System32/config /mnt/c/Snapshots/OS_\$TIMESTAMP/config
+echo "OS snapshot created at /mnt/c/Snapshots/OS_\$TIMESTAMP" > /mnt/c/Windows/Temp/snapshot_log.txt
+"@
+$osSnapshotScript | Out-File -FilePath "C:\Windows\Temp\snapshot_os.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/snapshot_os.sh"
+wsl bash -c "sudo /mnt/c/Windows/Temp\snapshot_os.sh"
+$memorySnapshotScript = @"
+\$snapshotDir = '$snapshotDir'
+\$timestamp = Get-Date -Format 'yyyyMMdd_HHmmss'
+\$memSnapshotPath = Join-Path \$snapshotDir "Memory_\$timestamp"
+New-Item -Path \$memSnapshotPath -ItemType Directory
+\$processes = Get-Process | Where-Object { \$_.WS -gt 0 }
+foreach (\$proc in \$processes) {
+    \$dumpFile = Join-Path \$memSnapshotPath "\$(\$proc.ProcessName)_\$(\$proc.Id).dmp"
+    procdump -ma \$proc.Id \$dumpFile -AcceptEula
+}
+Write-Output "Memory snapshot created at \$memSnapshotPath" | Out-File -FilePath "C:\Windows\Temp\snapshot_log.txt" -Append
+"@
+$memorySnapshotScript | Out-File -FilePath "C:\Windows\Temp\snapshot_memory.ps1" -Encoding ASCII
+if (-not (Test-Path "C:\Windows\Temp\procdump.exe")) {
+    Invoke-WebRequest -Uri "https://download.sysinternals.com/files/Procdump.zip" -OutFile "C:\Windows\Temp\Procdump.zip"
+    Expand-Archive -Path "C:\Windows\Temp\Procdump.zip" -DestinationPath "C:\Windows\Temp"
+}
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\snapshot_memory.ps1" -Verb RunAs
+$restoreSnapshotScript = @"
+#!/bin/bash
+LATEST_OS=$(ls -d /mnt/c/Snapshots/OS_* | sort -r | head -n 1)
+if [ -z "\$LATEST_OS" ]; then
+    echo "No OS snapshot found" > /mnt/c/Windows/Temp/restore_log.txt
+    exit 1
+fi
+reg import \$LATEST_OS/hklm.reg
+reg import \$LATEST_OS/hkcu.reg
+cp -r \$LATEST_OS/config /mnt/c/Windows/System32/config
+echo "OS snapshot restored from \$LATEST_OS" > /mnt/c/Windows/Temp/restore_log.txt
+"@
+$restoreSnapshotScript | Out-File -FilePath "C:\Windows\Temp\restore_snapshot.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/restore_snapshot.sh"
+
+# Delegate problem handling to WSL
+Write-Host "Configuring WSL for OS problem handling..."
+$wslProblemHandler = @"
+#!/bin/bash
+sfc_output=$(sfc /scannow 2>&1)
+if [[ \$sfc_output == *"corrupt"* ]]; then
+    echo "Corrupted files detected. Running DISM..." > /mnt/c/Windows/Temp/wsl_problem_report.txt
+    DISM /Online /Cleanup-Image /RestoreHealth
+fi
+ps aux --sort=-%cpu | head -n 5 > /mnt/c/Windows/Temp/wsl_cpu_report.txt
+ps aux --sort=-%mem | head -n 5 > /mnt/c/Windows/Temp/wsl_mem_report.txt
+"@
+$wslProblemHandler | Out-File -FilePath "C:\Windows\Temp\wsl_problem_handler.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/wsl_problem_handler.sh"
+wsl bash -c "sudo /mnt/c/Windows/Temp/wsl_problem_handler.sh"
+
+# Delegate security to WSL
+Write-Host "Delegating Windows security to WSL..."
+$wslSecurityScript = @"
+#!/bin/bash
+iptables -F
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+iptables -A INPUT -j DROP
+tail -n 100 /var/log/auth.log > /mnt/c/Windows/Temp/wsl_security_log.txt
+awk -F: '\$3 >= 1000 && \$1 != "nobody" {print \$1}' /etc/passwd > /mnt/c/Windows/Temp/wsl_users.txt
+"@
+$wslSecurityScript | Out-File -FilePath "C:\Windows\Temp\wsl_security.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/wsl_security.sh"
+wsl bash -c "sudo /mnt/c/Windows/Temp/wsl_security.sh"
+
+# Secure PowerShell with WSL handshake
+Write-Host "Securing PowerShell with WSL handshake..."
+$powershellSecurityScript = @"
+#!/bin/bash
+FLAG="secure_ps_$(date +%s)"
+echo \$FLAG > /mnt/c/Windows/Temp/ps_flag.txt
+CALLER=$(whoami)
+if [[ "\$CALLER" != "root" ]]; then
+    echo "Error: PowerShell scripts must be executed by root account" > /mnt/c/Windows/Temp/ps_error.txt
+    exit 1
+fi
+echo "PowerShell execution authorized for \$CALLER with flag \$FLAG" > /mnt/c/Windows/Temp/ps_auth.txt
+"@
+$powershellSecurityScript | Out-File -FilePath "C:\Windows\Temp\ps_security.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/ps_security.sh"
+$powershellWrapper = @"
+\$flagPath = 'C:\Windows\Temp\ps_flag.txt'
+\$authPath = 'C:\Windows\Temp\ps_auth.txt'
+\$errorPath = 'C:\Windows\Temp\ps_error.txt'
+wsl bash -c 'sudo /mnt/c/Windows/Temp/ps_security.sh'
+if (Test-Path \$errorPath) {
+    Write-Host (Get-Content \$errorPath)
+    exit
+}
+if (Test-Path \$authPath) {
+    Write-Host (Get-Content \$authPath)
+} else {
+    Write-Host 'PowerShell execution not authorized.'
+    exit
+}
+"@
+$powershellWrapper | Out-File -FilePath "C:\Windows\Temp\ps_wrapper.ps1" -Encoding ASCII
+
+# Disable unnecessary services
+Write-Host "Disabling unnecessary Windows services..."
+$servicesToDisable = @(
+    "SysMain", "WSearch", "WindowsUpdate", "wuauserv", "DiagTrack",
+    "RetailDemo", "dmwappushservice", "MapsBroker", "XblAuthManager", "XblGameSave"
+)
+foreach ($service in $servicesToDisable) {
+    try {
+        Set-Service -Name $service -StartupType Disabled -ErrorAction Stop
+        Stop-Service -Name $service -Force -ErrorAction Stop
+        Write-Host "Disabled and stopped $service"
+    } catch {
+        Write-Host "Failed to disable $service: $_"
+    }
+}
+
+# Optimize boot time
+Write-Host "Enabling Fast Startup..."
+powercfg /hibernate on
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Power" -Name "HiberbootEnabled" -Value 1
+
+Write-Host "Disabling unnecessary startup programs..."
+$startupItems = Get-CimInstance Win32_StartupCommand | Where-Object { $_.User -eq "All Users" -or $_.User -eq $env:USERNAME }
+foreach ($item in $startupItems) {
+    if ($item.Command -notlike "*Windows*") {
+        Disable-CimInstance -InputObject $item -ErrorAction SilentlyContinue
+        Write-Host "Disabled startup item: $($item.Name)"
+    }
+}
+
+# Optimize memory for low-hardware systems
+Write-Host "Configuring memory for low-hardware systems..."
+$os = Get-CimInstance Win32_OperatingSystem
+$totalMemory = $os.TotalVisibleMemorySize / 1MB
+if ($totalMemory -lt 8) {
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "DisablePagingExecutive" -Value 1
+    Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Memory Management" -Name "LargeSystemCache" -Value 0
+}
+wmic computersystem where name="%computername%" set AutomaticManagedPagefile=False
+wmic pagefileset delete
+Write-Host "pagefile.sys removed."
+
+# Disable memory compression
+Write-Host "Disabling memory compression..."
+Stop-Process -Name "Memory Compression" -Force -ErrorAction SilentlyContinue
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Services\SysMain" -Name "Start" -Value 4
+
+# Fix Explorer crashes
+Write-Host "Resetting Windows Explorer settings..."
+Stop-Process -Name "explorer" -Force
+Remove-Item -Path "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer" -Recurse -ErrorAction SilentlyContinue
+sfc /scannow
+DISM /Online /Cleanup-Image /RestoreHealth
+
+# Disable Accessibility Command Prompt
+Write-Host "Disabling Accessibility Command Prompt..."
+Set-ItemProperty -Path "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\utilman.exe" -Name "Debugger" -Value $null
+
+# Node-based file handling
+Write-Host "Creating node-based file handling structure..."
+$objectFolder = "C:\Nodes"
+if (-not (Test-Path $objectFolder)) {
+    New-Item -Path $objectFolder -ItemType Directory
+}
+$nodeRules = @{
+    "Documents" = @("*.docx", "*.pdf", "*.txt")
+    "Media" = @("*.jpg", "*.png", "*.mp4", "*.mp3")
+    "Code" = @("*.py", "*.cs", "*.js")
+}
+foreach ($category in $nodeRules.Keys) {
+    $categoryPath = Join-Path $objectFolder $category
+    if (-not (Test-Path $categoryPath)) {
+        New-Item -Path $categoryPath -ItemType Directory
+    }
+}
+$dropHandlerScript = @"
+Add-Type -AssemblyName System.Windows.Forms
+\$dropFolder = '$objectFolder'
+\$form = New-Object Windows.Forms.Form
+\$form.Text = 'Node-Based File Handler'
+\$form.AllowDrop = \$true
+\$form.Add_DragEnter({
+    if (\$_.Data.GetDataPresent([Windows.Forms.DataFormats]::FileDrop)) {
+        \$_.Effect = [Windows.Forms.DragDropEffects]::Move
+    }
+})
+\$form.Add_DragDrop({
+    \$files = \$_.Data.GetData([Windows.Forms.DataFormats]::FileDrop)
+    foreach (\$file in \$files) {
+        \$ext = [System.IO.Path]::GetExtension(\$file).ToLower()
+        switch -Wildcard (\$ext) {
+            '*.docx' { Move-Item \$file -Destination '$objectFolder\Documents' }
+            '*.pdf'  { Move-Item \$file -Destination '$objectFolder\Documents' }
+            '*.txt'  { Move-Item \$file -Destination '$objectFolder\Documents' }
+            '*.jpg'  { Move-Item \$file -Destination '$objectFolder\Media' }
+            '*.png'  { Move-Item \$file -Destination '$objectFolder\Media' }
+            '*.mp4'  { Move-Item \$file -Destination '$objectFolder\Media' }
+            '*.mp3'  { Move-Item \$file -Destination '$objectFolder\Media' }
+            '*.py'   { Move-Item \$file -Destination '$objectFolder\Code' }
+            '*.cs'   { Move-Item \$file -Destination '$objectFolder\Code' }
+            '*.js'   { Move-Item \$file -Destination '$objectFolder\Code' }
+            default  { Write-Host 'Unsupported file type: \$file' }
+        }
+    }
+})
+\$form.ShowDialog()
+"@
+$dropHandlerScript | Out-File -FilePath "C:\Windows\Temp\NodeDropHandler.ps1" -Encoding ASCII
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\NodeDropHandler.ps1" -NoNewWindow
+
+# Enhanced blur effect
+Write-Host "Applying outline-based blur effect..."
+$blurScript = @"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DwmApi {
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetForegroundWindow();
+}
+"@
+while (\$true) {
+    \$fgWindow = [DwmApi]::GetForegroundWindow()
+    \$processes = Get-Process | Where-Object { \$_.MainWindowHandle -ne 0 -and \$_.MainWindowHandle -ne \$fgWindow -and \$_.ProcessName -ne 'powershell' }
+    foreach (\$proc in \$processes) {
+        \$attr = 19 # DWMWA_USE_HOSTBACKDROPBRUSH
+        \$attrValue = 1
+        [DwmApi]::DwmSetWindowAttribute(\$proc.MainWindowHandle, \$attr, [ref]\$attrValue, 4)
+    }
+    Start-Sleep -Milliseconds 500
+}
+"@
+$blurScript | Out-File -FilePath "C:\Windows\Temp\ApplyBlur.ps1" -Encoding ASCII
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\ApplyBlur.ps1" -Verb RunAs
+
+# Delegate process scheduling to WSL
+Write-Host "Configuring WSL for process scheduling..."
+$wslSchedulerScript = @"
+#!/bin/bash
+while read -r pid; do
+    taskset -c 0-3 \$pid 2>/dev/null
+done < <(ps aux | awk '{print \$2}' | tail -n +2)
+ps aux --sort=-%cpu > /mnt/c/Windows/Temp/wsl_scheduler_log.txt
+"@
+$wslSchedulerScript | Out-File -FilePath "C:\Windows\Temp\wsl_scheduler.sh" -Encoding ASCII
+wsl bash -c "sudo chmod +x /mnt/c/Windows/Temp/wsl_scheduler.sh"
+wsl bash -c "sudo /mnt/c/Windows/Temp/wsl_scheduler.sh"
+
+# Replace Taskbar with custom dock
+Write-Host "Replacing Taskbar with custom Velocity dock..."
+$dockScript = @"
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+\$dock = New-Object Windows.Forms.Form
+\$dock.FormBorderStyle = 'None'
+\$dock.BackColor = [System.Drawing.Color]::Black
+\$dock.Opacity = 0.8
+\$dock.Width = 400
+\$dock.Height = 60
+\$dock.StartPosition = 'Manual'
+\$dock.Location = New-Object System.Drawing.Point(0, ([System.Windows.Forms.Screen]::PrimaryScreen.Bounds.Height - 60))
+\$apps = @('notepad', 'cmd', 'explorer', 'C:\Nodes\Documents')
+\$xPos = 10
+foreach (\$app in \$apps) {
+    \$button = New-Object Windows.Forms.Button
+    \$button.Text = \$app
+    \$button.Width = 80
+    \$button.Height = 40
+    \$button.Location = New-Object System.Drawing.Point(\$xPos, 10)
+    \$button.BackColor = [System.Drawing.Color]::DarkGray
+    \$button.ForeColor = [System.Drawing.Color]::White
+    \$button.Add_Click({
+        if (\$_.SourceControl.Text -eq 'C:\Nodes\Documents') {
+            Start-Process explorer \$_.SourceControl.Text
+        } else {
+            Start-Process \$_.SourceControl.Text
+        }
+    })
+    \$dock.Controls.Add(\$button)
+    \$xPos += 90
+}
+\$shell = New-Object -ComObject Shell.Application
+\$shell.ToggleDesktop()
+\$dock.Show()
+"@
+$dockScript | Out-File -FilePath "C:\Windows\Temp\VelocityDock.ps1" -Encoding ASCII
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\VelocityDock.ps1" -NoNewWindow
+
+# Apply hybrid VR desktop theme
+Write-Host "Applying hybrid VR desktop theme..."
+$themeRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize"
+Set-ItemProperty -Path $themeRegPath -Name "AppsUseLightTheme" -Value 0
+Set-ItemProperty -Path $themeRegPath -Name "SystemUsesLightTheme" -Value 0
+$vrThemeScript = @"
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class DwmApi {
+    [DllImport("dwmapi.dll")]
+    public static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int attrValue, int attrSize);
+}
+"@
+\$hwnd = (Get-Process -Name explorer).MainWindowHandle
+\$attr = 19 # DWMWA_USE_HOSTBACKDROPBRUSH
+\$attrValue = 1
+[DwmApi]::DwmSetWindowAttribute(\$hwnd, \$attr, [ref]\$attrValue, 4)
+"@
+$vrThemeScript | Out-File -FilePath "C:\Windows\Temp\ApplyVRTheme.ps1" -Encoding ASCII
+Start-Process powershell -ArgumentList "-File C:\Windows\Temp\ApplyVRTheme.ps1" -Verb RunAs
+
+Write-Host "Windows Velocity setup complete. Reboot required."

@@ -1,0 +1,8 @@
+<SiPolicy>
+  <Rules>
+    <Rule>
+      <Publisher>O=MICROSOFT CORPORATION</Publisher>
+      <FilePath>C:\Program Files\VelocityService\*.exe</FilePath>
+    </Rule>
+  </Rules>
+</SiPolicy>
